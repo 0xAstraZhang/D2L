@@ -1,8 +1,18 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import pandas as pd
-import numpy as np
+from torch import nn
+from torch.utils.data import TensorDataset, DataLoader
 
-
-
+class HousePriceModel(nn.Module):
+    def __init__(self, in_features, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.model = nn.Sequential(
+            nn.Linear(in_features, 64),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(32, 1)
+        )
+    def forward(self, x):
+        return self.model(x)

@@ -1,6 +1,8 @@
+import torch
+import os
 import pandas as pd
 import numpy as np
-import torch
+
 
 # 读取数据
 train_data = pd.read_csv('predict_house_price_2020/data/raw/train.csv')
@@ -10,10 +12,11 @@ test_data = pd.read_csv('predict_house_price_2020/data/raw/test.csv')
 all_data = pd.concat([train_data.iloc[:, 1:], test_data.iloc[:, 1:]]) 
 
 # 删除有大量文字内容的列
-all_data = all_data.drop(columns=['Address', 'Sold Price', 'Summary', 
-                                      'Heating', 'Cooling', 'Parking', 
-                                      'Elementary School', 'Middle School', 'High School', 
-                                      'Zip'])
+all_data = all_data.drop(columns=['Address', 'Sold Price', 'Summary', 'Type', 
+                                  'Heating', 'Cooling', 'Parking', 
+                                  'Region', 'Elementary School', 'Middle School', 
+                                  'High School', 'Flooring', 'Appliances included', 'Laundry features', 
+                                  'City', 'Zip', 'State'])
 
 # 定义函数来获取数值列索引
 def numeric(df):
@@ -38,18 +41,19 @@ all_data['Total interior livable area'] = outlier_handling(all_data['Total inter
 all_data['Bedrooms'] = pd.to_numeric(all_data['Bedrooms'], errors='coerce')
 
 # 定义一个函数来处理日期列
-def data_conv(df):
+def data_conv(df, time):
     df = df.copy()
     # 将数据转换为时间格式，遇到不合法格式记为NaT
     df = pd.to_datetime(df, errors='coerce')
-    # 指定2020-01-01为参考时间
-    ref_time = pd.Timestamp('2020-01-01')
+    # 指定参考时间
+    ref_time = pd.Timestamp(time)
     # 数据与参考时间相减，得到时间差；NaT变为NaN
     df = (ref_time - df).dt.days
     return df
 
-all_data['Listed On'] = data_conv(all_data['Listed On'])
-all_data['Last Sold On'] = data_conv(all_data['Last Sold On'])
+all_data['Listed On'] = data_conv(all_data['Listed On'], '2020-01-01')
+all_data['Last Sold On'] = data_conv(all_data['Last Sold On'], '2020-01-01')
+all_data['Year built'] = data_conv(all_data['Year built'], '2020')
 
 # 距离取exp(-x)，距离越远数值越小，距离越近数值越大，同时数值范围控制在0到1之间
 all_data['Elementary School Distance'] = np.exp(-all_data['Elementary School Distance'])
@@ -102,23 +106,29 @@ train_features, test_features = standardization(train_features), standardization
 all_data = pd.concat([train_features.iloc[:, :], test_features.iloc[:, :]]) 
 all_data = one_hot(all_data)
 
-# 分割数据集和测试集，并对标签进行对数变换，减小数值范围
+# 分割数据集和测试集，获取训练集的标签、测试集的Id
 train_features = all_data[:num_train]
 test_features = all_data[num_train:]
-train_labels = np.log1p(train_data['Sold Price'].values).reshape(-1, 1)
+train_labels = train_data['Sold Price']
+test_id = test_data['Id']
 
-# 将数据转换为 PyTorch 张量并保存为 .pt 文件    
+# 将数据转换为 PyTorch 张量    
 train_features = torch.from_numpy(train_features.values.astype(np.float32))
 test_features = torch.from_numpy(test_features.values.astype(np.float32))
-train_labels = torch.from_numpy(train_labels.astype(np.float32))
+train_labels = torch.from_numpy(train_labels.values.astype(np.float32).reshape(-1, 1))
+test_id = torch.from_numpy(test_id.values.astype(np.int64).reshape(-1, 1))
 
 # 输出数据维度以验证正确性
-print(train_features.shape)
-print(test_features.shape)
-print(train_labels.shape)
+print(f'train_features.shape: {train_features.shape}')
+print(f'test_features.shape: {test_features.shape}')
+print(f'train_labels.shape: {train_labels.shape}')
+print(f'test_id.shape: {test_id.shape}')
 
 # 将处理后的数据保存为 .pt 文件，供模型训练使用
-torch.save(train_features, 'predict_house_price_2020/data/processed/train_features.pt')
-torch.save(test_features, 'predict_house_price_2020/data/processed/test_features.pt')
-torch.save(train_labels, 'predict_house_price_2020/data/processed/train_labels.pt')
+folder_path = 'predict_house_price_2020/data/processed'
+torch.save(train_features, os.path.join(folder_path, 'train_features.pt'))
+torch.save(test_features, os.path.join(folder_path, 'test_features.pt'))
+torch.save(train_labels, os.path.join(folder_path, 'train_labels.pt'))
+torch.save(test_id, os.path.join(folder_path, 'test_id.pt'))
 
+print(f'数据预处理完成，处理后的数据已保存到 {folder_path}')

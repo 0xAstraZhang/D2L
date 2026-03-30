@@ -1,1 +1,4 @@
 predict_house_price_2020/data/
+predict_house_price_2020/model/
+predict_house_price_2020/predictions/
+predict_house_price_2020/src/__pycache__

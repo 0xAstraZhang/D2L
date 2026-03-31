@@ -7,9 +7,9 @@ from model import HousePriceModel
 from torch.utils.data import TensorDataset, DataLoader
 
 # 超参数设定
-lr = 0.1
-epochs = 50
-batch_size = 512
+lr = 0.0005
+epochs = 150
+batch_size = 256
 num_workers = 0
 weight_decay = 1e-5
 
@@ -25,7 +25,7 @@ def train():
 
     # 定义模型、损失函数和优化器
     model = HousePriceModel(in_features=features.shape[1])
-    loss = utils.RMSLE
+    loss = utils.rmsle
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     model.to(device)
 
@@ -57,6 +57,7 @@ def train():
         avg_loss = epoch_loss / len(dataloader)
         loss_history.append(avg_loss)
         print(f'Epoch {epoch + 1}/{epochs}, Loss: {avg_loss:.4f}')
+    
     folder_path = 'predict_house_price_2020/model'
     os.makedirs(folder_path, exist_ok=True)
     save_path = os.path.join(folder_path, 'house_price_model.pth')

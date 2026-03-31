@@ -1,5 +1,6 @@
 import torch
 import os
+import utils
 import pandas as pd
 import numpy as np
 
@@ -9,126 +10,71 @@ train_data = pd.read_csv('predict_house_price_2020/data/raw/train.csv')
 test_data = pd.read_csv('predict_house_price_2020/data/raw/test.csv')
 
 # 统一处理数据集和测试集
-all_data = pd.concat([train_data.iloc[:, 1:], test_data.iloc[:, 1:]]) 
+all_data = pd.concat([train_data, test_data])
 
 # 删除有大量文字内容的列
-all_data = all_data.drop(columns=['Address', 'Sold Price', 'Summary', 'Type', 
-                                  'Heating', 'Cooling', 'Parking', 
-                                  'Region', 'Elementary School', 'Middle School', 
-                                  'High School', 'Flooring', 'Appliances included', 'Laundry features', 
-                                  'City', 'Zip', 'State'])
+drop_cols = ['Id', 'Address', 'Sold Price', 'Summary', 'Type', 
+                'Heating', 'Cooling', 'Parking', 
+                'Region', 'Elementary School', 'Middle School', 
+                'High School', 'Flooring', 'Appliances included', 
+                'Laundry features', 'City', 'Zip', 'State']
+all_data = all_data.drop(columns=[col for col in drop_cols if col in all_data.columns])
 
-# 定义函数来获取数值列索引
-def numeric(df):
-    return df.dtypes[df.dtypes != 'object'].index
+numeric_cols = utils.get_numeric_cols(all_data)
+all_data[numeric_cols] = all_data[numeric_cols].astype('float32')
 
-all_data[numeric(all_data)] = all_data[numeric(all_data)].apply(pd.to_numeric, errors='coerce')
-
-# 定义函数来处理异常值
-def outlier_handling(df):
-    df = df.copy()
-    # 计算1%分位数和99%分位数
-    q1 = df.quantile(0.01)
-    q99 = df.quantile(0.99)
-    # 去除掉异常值
-    df = df.where((df >= q1) & (df <= q99), np.nan)
-    return df
-
-all_data['Lot'] = outlier_handling(all_data['Lot'])
-all_data['Total interior livable area'] = outlier_handling(all_data['Total interior livable area'])
-
-# 处理字符串和数字混合的列，保留数字，字符串记为缺失值
+# 特殊处理 Bedrooms 列，部分数据中该列包含非数值内容，转换为数值类型，非数值部分记为缺失值
 all_data['Bedrooms'] = pd.to_numeric(all_data['Bedrooms'], errors='coerce')
 
-# 定义一个函数来处理日期列
-def data_conv(df, time):
-    df = df.copy()
-    # 将数据转换为时间格式，遇到不合法格式记为NaT
-    df = pd.to_datetime(df, errors='coerce')
-    # 指定参考时间
-    ref_time = pd.Timestamp(time)
-    # 数据与参考时间相减，得到时间差；NaT变为NaN
-    df = (ref_time - df).dt.days
-    return df
+# 处理异常数值，使用1%和99%的分位数进行截断，防止极端值对模型训练的影响
+all_data = utils.clip_outl(all_data, ['Lot', 'Total interior livable area'])
 
-all_data['Listed On'] = data_conv(all_data['Listed On'], '2020-01-01')
-all_data['Last Sold On'] = data_conv(all_data['Last Sold On'], '2020-01-01')
-all_data['Year built'] = data_conv(all_data['Year built'], '2020')
+# 处理日期列，计算距离2021-01-01的天数
+data_cols = ['Listed On', 'Last Sold On']
+all_data = utils.date_to_days(all_data, date_cols=data_cols, ref_time='2021-01-01')
+all_data['Year built'] = 2021 - all_data['Year built']
 
 # 距离取exp(-x)，距离越远数值越小，距离越近数值越大，同时数值范围控制在0到1之间
-all_data['Elementary School Distance'] = np.exp(-all_data['Elementary School Distance'])
-all_data['Middle School Distance'] = np.exp(-all_data['Middle School Distance'])
-all_data['High School Distance'] = np.exp(-all_data['High School Distance'])
+dist_cols = ['Elementary School Distance', 'Middle School Distance', 'High School Distance']
+all_data = utils.exp_trans(all_data, dist_cols)
 
-# 定义标准化函数
-def standardization(df):
-    df = df.copy()
-    # 均值为0，方差为1
-    df.loc[:, numeric(df)] = df[numeric(df)].apply(
-    lambda x: (x - x.mean()) / (x.std())
-)
-    # NaN部分替换为0
-    df.loc[:, numeric(df)] = df[numeric(df)].fillna(0)
-    return df
+# 独热编码
+all_data = utils.one_hot(all_data)
 
-# 定义One-Hot函数
-def one_hot(df):
-    df = df.copy()
-    new_cols =  [] # 存放新生成的 dummy 列
-    cols_to_drop = [] # 记录要删除的原列名
-    for col in df.columns:
-        if df[col].dtype == 'object':
-            cols_to_drop.append(col)
-            # 判断是否是多标签列（有无','）
-            if df[col].astype(str).str.contains(',').any():
-                dummies = df[col].fillna('None').str.get_dummies(sep=', ')
-                dummies = dummies.add_prefix(f"{col}_")
-                new_cols.append(dummies)
-            # 处理单标签列
-            else:
-                dummies = pd.get_dummies(df[col], prefix=col, dummy_na=True)
-                new_cols.append(dummies)
-    # 删除原始列
-    df = df.drop(columns=cols_to_drop)
-    # 合并新列
-    df = pd.concat([df] + new_cols, axis=1)
-    return df
+# 分割数据集和测试集
+train_data_size = train_data.shape[0]
+train_features = all_data[:train_data_size]
+test_features = all_data[train_data_size:]
 
-# 分割数据集和测试集，记录训练集的样本数量，以便后续分割数据集和测试集
-num_train = train_data.shape[0]
-train_features = all_data[:num_train]
-test_features = all_data[num_train:]
+# 对数据集进行标准化处理，使用训练集的均值和标准差进行标准化，确保测试集的处理与训练集一致
+train_mean = train_features.mean()
+train_std = train_features.std()
+train_std = train_std.replace(0, 1e-8) 
+train_features = utils.std_func(train_features, mean=train_mean, std=train_std)
+test_features = utils.std_func(test_features, mean=train_mean, std=train_std)
 
-# 对数据集和测试集分别进行标准化处理，防止数据污染
-train_features, test_features = standardization(train_features), standardization(test_features)
-
-# 再次合并数据集和测试集，进行One-Hot编码，保持列的一致性
-all_data = pd.concat([train_features.iloc[:, :], test_features.iloc[:, :]]) 
-all_data = one_hot(all_data)
-
-# 分割数据集和测试集，获取训练集的标签、测试集的Id
-train_features = all_data[:num_train]
-test_features = all_data[num_train:]
+# 获取训练集的标签、测试集的Id
 train_labels = train_data['Sold Price']
 test_id = test_data['Id']
 
-# 将数据转换为 PyTorch 张量    
+# 将数据转换为 PyTorch 张量
 train_features = torch.from_numpy(train_features.values.astype(np.float32))
 test_features = torch.from_numpy(test_features.values.astype(np.float32))
-train_labels = torch.from_numpy(train_labels.values.astype(np.float32).reshape(-1, 1))
-test_id = torch.from_numpy(test_id.values.astype(np.int64).reshape(-1, 1))
+train_labels = torch.from_numpy(train_labels.values.astype(np.float32))
+test_id = torch.from_numpy(test_id.values.astype(np.int32))
 
-# 输出数据维度以验证正确性
-print(f'train_features.shape: {train_features.shape}')
-print(f'test_features.shape: {test_features.shape}')
-print(f'train_labels.shape: {train_labels.shape}')
-print(f'test_id.shape: {test_id.shape}')
+# 将处理后的数据保存到字典中
+dataset = {
+    'train_features': train_features,
+    'test_features': test_features,
+    'train_labels': train_labels,
+    'test_id': test_id
+}
 
-# 将处理后的数据保存为 .pt 文件，供模型训练使用
+# 将处理后的数据保存为 .pt 文件
 folder_path = 'predict_house_price_2020/data/processed'
-torch.save(train_features, os.path.join(folder_path, 'train_features.pt'))
-torch.save(test_features, os.path.join(folder_path, 'test_features.pt'))
-torch.save(train_labels, os.path.join(folder_path, 'train_labels.pt'))
-torch.save(test_id, os.path.join(folder_path, 'test_id.pt'))
+for name, value in dataset.items():
+    print(f'{name}.shape: {value.shape}') # 输出数据维度以验证正确性
+    torch.save(value, os.path.join(folder_path, f'{name}.pt'))
 
 print(f'数据预处理完成，处理后的数据已保存到 {folder_path}')

@@ -7,9 +7,9 @@ from model import HousePriceModel
 from torch.utils.data import TensorDataset, DataLoader
 
 # 超参数设定
-lr = 0.0005
-epochs = 150
-batch_size = 256
+lr = 0.005
+epochs = 40
+batch_size = 128
 num_workers = 0
 weight_decay = 1e-5
 

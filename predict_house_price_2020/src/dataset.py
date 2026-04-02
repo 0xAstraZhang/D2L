@@ -73,6 +73,7 @@ dataset = {
 
 # 将处理后的数据保存为 .pt 文件
 folder_path = 'predict_house_price_2020/data/processed'
+os.makedirs(folder_path, exist_ok=True)
 for name, value in dataset.items():
     print(f'{name}.shape: {value.shape}') # 输出数据维度以验证正确性
     torch.save(value, os.path.join(folder_path, f'{name}.pt'))

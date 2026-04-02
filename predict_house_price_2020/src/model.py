@@ -8,7 +8,7 @@ class HousePriceModel(nn.Module):
         self.model = nn.Sequential(
             nn.Linear(in_features, 96),
             nn.ReLU(),
-            nn.Dropout(0.2),            
+            nn.Dropout(0.2),
             nn.Linear(96, 64),
             nn.ReLU(),
             nn.Dropout(0.2),

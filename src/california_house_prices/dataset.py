@@ -1,9 +1,8 @@
 import torch
 import os
-import utils
 import pandas as pd
 import numpy as np
-
+from . import utils
 
 # 读取数据
 train_data = pd.read_csv('data/california_house_prices/raw/train.csv')

@@ -1,10 +1,10 @@
 import os
 import torch
-import utils
+from torch.utils.data import TensorDataset, DataLoader
 import matplotlib.pyplot as plt
 from torch import optim
-from model import HousePriceModel
-from torch.utils.data import TensorDataset, DataLoader
+from .model import HousePriceModel
+from . import utils
 
 # 超参数设定
 lr = 0.005

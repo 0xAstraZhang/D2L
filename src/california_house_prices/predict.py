@@ -1,11 +1,10 @@
 import os
 import torch
-import utils
 import numpy as np
 import pandas as pd
 from torch.utils.data import TensorDataset
-from model import HousePriceModel
-
+from .model import HousePriceModel
+from . import utils
 def test():
     # 获取计算设备  
     device = utils.get_device()

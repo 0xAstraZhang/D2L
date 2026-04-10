@@ -20,8 +20,8 @@ def train():
     print(f'本次训练所用计算设备: {device}')
 
     # 加载训练数据
-    features = torch.load('predict_house_price_2020/data/processed/train_features.pt', map_location='cpu')
-    labels = torch.load('predict_house_price_2020/data/processed/train_labels.pt', map_location='cpu').reshape(-1, 1)
+    features = torch.load('data/california_house_prices/processed/train_features.pt', map_location='cpu')
+    labels = torch.load('data/california_house_prices/processed/train_labels.pt', map_location='cpu').reshape(-1, 1)
 
     # 定义模型、损失函数和优化器
     model = HousePriceModel(in_features=features.shape[1])
@@ -58,9 +58,9 @@ def train():
         loss_history.append(avg_loss)
         print(f'Epoch {epoch + 1}/{epochs}, Loss: {avg_loss:.4f}')
     
-    folder_path = 'predict_house_price_2020/model'
+    folder_path = 'model/california_house_prices'
     os.makedirs(folder_path, exist_ok=True)
-    save_path = os.path.join(folder_path, 'house_price_model.pth')
+    save_path = os.path.join(folder_path, 'model_weights.pth')
     torch.save(model.state_dict(), save_path)
     print(f'训练参数已保存到 {save_path}')
 

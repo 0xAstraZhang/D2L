@@ -12,11 +12,11 @@ def test():
     print(f'本次测试所用计算设备: {device}')
 
     # 加载测试数据
-    features = torch.load('predict_house_price_2020/data/processed/test_features.pt', map_location='cpu')
+    features = torch.load('data/california_house_prices/processed/test_features.pt', map_location='cpu')
 
     # 定义模型并加载训练好的参数
     model = HousePriceModel(in_features=features.shape[1])
-    model.load_state_dict(torch.load('predict_house_price_2020/model/house_price_model.pth', map_location='cpu'))
+    model.load_state_dict(torch.load('model/california_house_prices/model_weights.pth', map_location='cpu'))
     model.to(device)
     model.eval()
 
@@ -29,12 +29,12 @@ def test():
 
 if __name__ == '__main__':
     predictions = test()
-    test_id = torch.load('predict_house_price_2020/data/processed/test_id.pt', map_location='cpu').numpy().reshape(-1).astype(int)
+    test_id = torch.load('data/california_house_prices/processed/test_id.pt', map_location='cpu').numpy().reshape(-1).astype(int)
     result = pd.DataFrame({
         'Id': test_id, 'Sold Price': predictions
     })
 
-    folder_path = 'predict_house_price_2020/predictions'
+    folder_path = 'data/california_house_prices/predictions'
     os.makedirs(folder_path, exist_ok=True)
     save_path = os.path.join(folder_path, 'predictions.csv')
     

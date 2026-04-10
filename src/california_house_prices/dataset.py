@@ -6,8 +6,8 @@ import numpy as np
 
 
 # 读取数据
-train_data = pd.read_csv('predict_house_price_2020/data/raw/train.csv')
-test_data = pd.read_csv('predict_house_price_2020/data/raw/test.csv')
+train_data = pd.read_csv('data/california_house_prices/raw/train.csv')
+test_data = pd.read_csv('data/california_house_prices/raw/test.csv')
 
 # 统一处理数据集和测试集
 all_data = pd.concat([train_data, test_data])
@@ -72,7 +72,7 @@ dataset = {
 }
 
 # 将处理后的数据保存为 .pt 文件
-folder_path = 'predict_house_price_2020/data/processed'
+folder_path = 'data/california_house_prices/processed'
 os.makedirs(folder_path, exist_ok=True)
 for name, value in dataset.items():
     print(f'{name}.shape: {value.shape}') # 输出数据维度以验证正确性

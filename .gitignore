@@ -2,8 +2,10 @@
 .vscode/
 
 # 忽略数据、模型参数、预测结果等文件夹
-predict_house_price_2020/data/
-predict_house_price_2020/model/
-predict_house_price_2020/predictions/
-predict_house_price_2020/src/__pycache__
+data/
+model/
+predictions/
+src/*/__pycache__
 
+# 
+.DS_Store

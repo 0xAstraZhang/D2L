@@ -2,9 +2,9 @@
 .vscode/
 
 # 忽略数据、模型参数、预测结果等文件夹
-data/
-model/
-predictions/
+data/*
+model/*
+predictions/*
 src/*/__pycache__
 
 # 

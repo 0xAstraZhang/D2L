@@ -1,11 +1,39 @@
 import torch
 from torch.backends import mps
-from d2l import torch as d2l
-from IPython import display
 import matplotlib.pyplot as plt
-from matplotlib.axes import Axes  # 导入类型用于声明
-from typing import List, Optional, Union
 import os
+import pandas as pd
+import numpy as np
+import torchvision
+from torch.utils.data import Dataset
+
+# 自定义数据集类
+class LeavesDataset(Dataset):
+    def __init__(self, csv_file, img_dir, transform=None):
+        super().__init__()
+        self.df = pd.read_csv(os.path.join(img_dir, csv_file))
+        self.img_dir = img_dir
+        self.transform = transform
+        self.classes = sorted(self.df.iloc[:, 1].unique())
+        self.cls_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.classes)}
+        self.idx_to_cls = {idx: cls_name for idx, cls_name in enumerate(self.classes)}
+        self.labels = np.array(self.df.iloc[:, 1].map(self.cls_to_idx).values, dtype=np.int64)
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        image_name = self.df.iloc[idx, 0]
+        label = self.labels[idx]
+
+        image_path = os.path.join(self.img_dir, image_name)
+        image = torchvision.io.read_image(image_path)
+
+        if self.transform:
+            image = self.transform(image)
+
+        return image, label
+
 
 # 定义device自动选择函数
 def get_device():
@@ -16,91 +44,101 @@ def get_device():
     else:
         return torch.device('cpu')
 
-# 定义函数来计算准确率
-def calculate_accuracy(model, data_loader, device):
-    model.eval()
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for images, labels in data_loader:
+# 画训练曲线的函数
+def plot_history(train_loss, train_acc, val_acc, fold, model_dir):
+    """训练结束后，画一张静态图并保存到本地"""
+    plt.figure(figsize=(8, 5))
+    epochs = range(1, len(train_loss) + 1)
+    
+    plt.plot(epochs, train_loss, 'b-', label='Train Loss')
+    plt.plot(epochs, train_acc, 'g--', label='Train Acc')
+    plt.plot(epochs, val_acc, 'r-.', label='Val Acc')
+    
+    plt.title(f'Fold {fold + 1} Training Curve')
+    plt.xlabel('Epochs')
+    plt.ylabel('Value')
+    plt.legend()
+    plt.grid(True)
+    
+    # 保存图片到模型目录下
+    save_path = os.path.join(model_dir, f'learning_curve_fold{fold + 1}.png')
+    plt.savefig(save_path)
+    plt.close() # 关闭画板释放内存
+    print(f"第 {fold + 1} 折的学习曲线已保存至: {save_path}")
+
+# 训练模型
+def train(model, train_loader, val_loader, loss, optimizer, device, epochs, patience, model_dir, fold):
+    # 将模型移动到设备上
+    model.to(device)
+    
+    # 创建空列表用于记录训练和验证的损失与准确率
+    train_loss_history = []
+    val_loss_history = []
+    train_acc_history = []
+    val_acc_history = []
+    
+    # 用于记录当前折内最佳验证损失
+    best_val_loss = float('inf')
+    
+    # 早停计数器
+    early_stop_counter = 0
+
+    # 训练循环
+    for epoch in range(epochs):
+        # 训练阶段
+        model.train()
+        train_loss, train_correct, train_total = 0.0, 0, 0
+        for images, labels in train_loader:
             images, labels = images.to(device), labels.to(device)
+            optimizer.zero_grad()
             outputs = model(images)
+            l = loss(outputs, labels)
+            l.backward()
+            optimizer.step()
+            train_loss += l.item()
             _, predicted = torch.max(outputs.data, dim=1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-    return correct / total
+            train_total += labels.size(0)
+            train_correct += (predicted == labels).sum().item()
 
-# 早停函数
-def early_stopping(val_acc_history, patience):
-    if len(val_acc_history) < patience:
-        return False
-    recent_accs = val_acc_history[-patience:]
-    return all(acc <= recent_accs[0] for acc in recent_accs)
+        # 记录训练损失和准确率
+        train_loss_history.append(train_loss / len(train_loader))
+        train_acc_history.append(train_correct / train_total)
 
-# 定义动画类用于绘图
-class Animator:
-    def __init__(self, xlabel: Optional[str] = None, ylabel: Optional[str] = None, 
-                 legend: Optional[List[str]] = None, xlim: Optional[List[float]] = None,
-                 ylim: Optional[List[float]] = None, xscale: str = 'linear', 
-                 yscale: str = 'linear', fmts: tuple = ('-', 'm--', 'g-.', 'r:'), 
-                 nrows: int = 1, ncols: int = 1, figsize: tuple = (3.5, 2.5)):
-        
-        if legend is None:
-            legend = []
-            
-        # 设置 SVG 显示
-        from matplotlib_inline import backend_inline
-        backend_inline.set_matplotlib_formats('svg')
-        
-        # 显式声明 fig 为 Figure，axes 为包含 Axes 对象的列表/数组
-        self.fig, axes_ndarray = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False)
-        
-        # 重点：强制转换为具体的 Axes 类型列表，让 Pylance 识别
-        self.axes: List[Axes] = axes_ndarray.flatten().tolist()
-        
-        self.config_dict = {
-            'xlabel': xlabel, 'ylabel': ylabel, 'xlim': xlim, 'ylim': ylim,
-            'xscale': xscale, 'yscale': yscale, 'legend': legend
-        }
-        self.X, self.Y, self.fmts = None, None, fmts
+        # 验证阶段
+        model.eval()
+        with torch.no_grad():
+            val_loss, val_correct, val_total = 0.0, 0, 0
+            for images, labels in val_loader:
+                images, labels = images.to(device), labels.to(device)
+                outputs = model(images)
+                l = loss(outputs, labels)
+                val_loss += l.item()
+                # 计算验证准确率
+                _, predicted = torch.max(outputs.data, dim=1)
+                val_total += labels.size(0)
+                val_correct += (predicted == labels).sum().item()
 
-    def _set_axes(self, ax: Axes):
-        """内部函数：设置坐标轴属性"""
-        ax.set_xlabel(self.config_dict['xlabel'])
-        ax.set_ylabel(self.config_dict['ylabel'])
-        ax.set_xscale(self.config_dict['xscale'])
-        ax.set_yscale(self.config_dict['yscale'])
-        ax.set_xlim(self.config_dict['xlim'])
-        ax.set_ylim(self.config_dict['ylim'])
-        if self.config_dict['legend']:
-            ax.legend(self.config_dict['legend'])
-        ax.grid()
+        # 记录验证损失和准确率
+        val_loss_history.append(val_loss / len(val_loader))
+        val_acc_history.append(val_correct / val_total)
 
-    def add(self, x: Union[float, List[float]], y: Union[float, List[float]]):
-        """向图表中添加多个数据点"""
-        if not hasattr(y, "__len__"):
-            y = [y]  # type: ignore
-        n = len(y) # type: ignore
-        if not hasattr(x, "__len__"):
-            x = [x] * n # type: ignore
-        
-        if self.X is None:
-            self.X = [[] for _ in range(n)] # type: ignore
-        if self.Y is None:
-            self.Y = [[] for _ in range(n)] # type: ignore
-        
-        for i, (a, b) in enumerate(zip(x, y)): # type: ignore
-            if a is not None and b is not None:
-                self.X[i].append(a)
-                self.Y[i].append(b)
-        
-        # 显式获取第一个 axes 对象
-        ax: Axes = self.axes[0]
-        
-        ax.cla() # 现在 Pylance 知道 ax 是 Axes 类型，不会报 cla 未知
-        for x_coords, y_coords, fmt in zip(self.X, self.Y, self.fmts):
-            ax.plot(x_coords, y_coords, fmt) # 也不会报 plot 未知
-        
-        self._set_axes(ax)
-        display.display(self.fig)
-        display.clear_output(wait=True)
+        # 打印当前epoch的训练和验证结果
+        print(f"Epoch [{epoch+1}/{epochs}] "
+            f"Train Loss: {train_loss_history[-1]:.4f}, Train Acc: {train_acc_history[-1]:.4f} | "
+            f"Val Loss: {val_loss_history[-1]:.4f}, Val Acc: {val_acc_history[-1]:.4f}")
+
+        # 保存当前折内最佳模型及早停判断
+        if val_loss_history[-1] < best_val_loss:
+            best_val_loss = val_loss_history[-1]
+            torch.save(model.state_dict(), os.path.join(model_dir, f'best_model_fold{fold+1}.pth'))
+            early_stop_counter = 0  # 表现变好，清零计数器
+        else:
+            early_stop_counter += 1 # 表现没变好，增加计数器
+
+        # 早停判断
+        if early_stop_counter >= patience:
+            print(f"Early stopping at epoch {epoch+1}")
+            break
+
+    print(f"已保存第 {fold + 1} 折内最佳模型，其测试损失为: {best_val_loss:.4f}")
+    plot_history(train_loss_history, train_acc_history, val_acc_history, fold, model_dir)

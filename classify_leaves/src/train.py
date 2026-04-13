@@ -34,7 +34,7 @@ val_augs = torchvision.transforms.Compose([
 ])
 # 超参数
 batch_size = 128 # 批量大小
-out_features = 177 # 输出类别数
+out_features = 176 # 输出类别数
 lr = 0.001 # 学习率
 epochs = 20 # 训练轮数
 k = 3 # k折交叉验证

@@ -27,7 +27,7 @@ train_augs = torchvision.transforms.Compose([
 ])
 val_augs = torchvision.transforms.Compose([
     T.Resize(256, antialias=True), # type: ignore
-    T.CenterCrop(224),
+    T.CenterCrop(224),  
     T.ConvertImageDtype(torch.float32),
     T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), # 使用ImageNet的均值和标准差进行归一化
 
@@ -61,14 +61,6 @@ if __name__ == '__main__':
         print(f'Fold {fold+1}/{k}')
         # 加载预训练的ResNet34模型
         model = models.resnet34(weights=models.ResNet34_Weights.DEFAULT)
-
-        # 冻结全局参数
-        for param in model.parameters():
-            param.requires_grad = False
-
-        # 解冻最后一个Block参数
-        for param in model.layer4.parameters():
-            param.requires_grad = True
 
         # 替换全连接层
         model.fc = nn.Linear(model.fc.in_features, out_features)

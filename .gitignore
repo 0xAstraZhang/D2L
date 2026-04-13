@@ -2,10 +2,15 @@
 .vscode/
 
 # 忽略数据、模型参数、预测结果等文件夹
-data/*
-model/*
-predictions/*
-src/*/__pycache__
 
-# 
+california_house_prices/data
+california_house_prices/model
+california_house_prices/predictions
+
+classify_leaves/data
+classify_leaves/model
+classify_leaves/predictions
+
+# 忽略系统文件和Python缓存文件夹 
 .DS_Store
+__pycache__/

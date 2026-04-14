@@ -6,6 +6,8 @@ import pandas as pd
 import numpy as np
 import torchvision
 from torch.utils.data import Dataset
+import torchvision.transforms as T
+from torch.utils.data import Dataset
 
 # 自定义数据集类
 class LeavesDataset(Dataset):
@@ -23,7 +25,7 @@ class LeavesDataset(Dataset):
         return len(self.df)
 
     def __getitem__(self, idx):
-        image_name = self.df.iloc[idx, 0]
+        image_name = str(self.df.iloc[idx, 0])
         label = self.labels[idx]
 
         image_path = os.path.join(self.img_dir, image_name)
@@ -66,7 +68,73 @@ def plot_history(train_loss, train_acc, val_acc, fold, model_dir):
     plt.close() # 关闭画板释放内存
     print(f"第 {fold + 1} 折的学习曲线已保存至: {save_path}")
 
-# 训练模型
+# 数据加载函数
+def data_loader():
+    # 数据增强
+    train_augs = torchvision.transforms.Compose([
+        T.Resize(256, antialias=True),
+        T.RandomHorizontalFlip(),
+        T.RandomVerticalFlip(),
+        T.RandomResizedCrop(224, scale=(0.8, 1.0), antialias=True),
+        T.RandomRotation(20),
+        T.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1),
+        T.ConvertImageDtype(torch.float32), 
+        T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), # 使用ImageNet的均值和标准差进行归一化
+    ])
+    val_augs = torchvision.transforms.Compose([
+        T.Resize(256, antialias=True),
+        T.CenterCrop(224),  
+        T.ConvertImageDtype(torch.float32),
+        T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), # 使用ImageNet的均值和标准差进行归一化
+    ])
+
+    # 加载数据集
+    img_dir = 'classify_leaves/data/'
+    dataset = LeavesDataset(csv_file='train.csv', img_dir=img_dir, transform=None)
+    train_dataset = LeavesDataset(csv_file='train.csv', img_dir=img_dir, transform=train_augs)
+    val_dataset= LeavesDataset(csv_file='train.csv', img_dir=img_dir, transform=val_augs)
+    return dataset, train_dataset, val_dataset
+
+# 训练一个epoch的函数
+def train_epoch(model, train_loader, loss, optimizer, device, train_loss_history, train_acc_history):
+    model.train()
+    train_loss, train_correct, train_total = 0.0, 0, 0
+    for images, labels in train_loader:
+        images, labels = images.to(device), labels.to(device)
+        optimizer.zero_grad()
+        outputs = model(images)
+        l = loss(outputs, labels)
+        l.backward()
+        optimizer.step()
+        train_loss += l.item()
+        _, predicted = torch.max(outputs.data, dim=1)
+        train_total += labels.size(0)
+        train_correct += (predicted == labels).sum().item()
+
+    # 记录训练损失和准确率
+    train_loss_history.append(train_loss / len(train_loader))
+    train_acc_history.append(train_correct / train_total)
+
+# 验证一个epoch的函数
+def val_epoch(model, val_loader, loss, device, val_loss_history, val_acc_history):
+    model.eval()
+    with torch.no_grad():
+        val_loss, val_correct, val_total = 0.0, 0, 0
+        for images, labels in val_loader:
+            images, labels = images.to(device), labels.to(device)
+            outputs = model(images)
+            l = loss(outputs, labels)
+            val_loss += l.item()
+            # 计算验证准确率
+            _, predicted = torch.max(outputs.data, dim=1)
+            val_total += labels.size(0)
+            val_correct += (predicted == labels).sum().item()
+
+    # 记录验证损失和准确率
+    val_loss_history.append(val_loss / len(val_loader))
+    val_acc_history.append(val_correct / val_total)
+
+# 训练函数，包含早停逻辑和模型保存
 def train(model, train_loader, val_loader, loss, optimizer, device, epochs, patience, model_dir, fold):
     # 将模型移动到设备上
     model.to(device)
@@ -76,69 +144,29 @@ def train(model, train_loader, val_loader, loss, optimizer, device, epochs, pati
     val_loss_history = []
     train_acc_history = []
     val_acc_history = []
-    
-    # 用于记录当前折内最佳验证损失
-    best_val_loss = float('inf')
-    
+      
     # 早停计数器
     early_stop_counter = 0
 
+    # 用于记录当前折内最佳验证损失
+    best_val_loss = float('inf')
+
     # 训练循环
     for epoch in range(epochs):
-        # 训练阶段
-        model.train()
-        train_loss, train_correct, train_total = 0.0, 0, 0
-        for images, labels in train_loader:
-            images, labels = images.to(device), labels.to(device)
-            optimizer.zero_grad()
-            outputs = model(images)
-            l = loss(outputs, labels)
-            l.backward()
-            optimizer.step()
-            train_loss += l.item()
-            _, predicted = torch.max(outputs.data, dim=1)
-            train_total += labels.size(0)
-            train_correct += (predicted == labels).sum().item()
-
-        # 记录训练损失和准确率
-        train_loss_history.append(train_loss / len(train_loader))
-        train_acc_history.append(train_correct / train_total)
-
-        # 验证阶段
-        model.eval()
-        with torch.no_grad():
-            val_loss, val_correct, val_total = 0.0, 0, 0
-            for images, labels in val_loader:
-                images, labels = images.to(device), labels.to(device)
-                outputs = model(images)
-                l = loss(outputs, labels)
-                val_loss += l.item()
-                # 计算验证准确率
-                _, predicted = torch.max(outputs.data, dim=1)
-                val_total += labels.size(0)
-                val_correct += (predicted == labels).sum().item()
-
-        # 记录验证损失和准确率
-        val_loss_history.append(val_loss / len(val_loader))
-        val_acc_history.append(val_correct / val_total)
+        train_epoch(model, train_loader, loss, optimizer, device, train_loss_history, train_acc_history)
+        val_epoch(model, val_loader, loss, device, val_loss_history, val_acc_history)
 
         # 打印当前epoch的训练和验证结果
-        print(f"Epoch [{epoch+1}/{epochs}] "
-            f"Train Loss: {train_loss_history[-1]:.4f}, Train Acc: {train_acc_history[-1]:.4f} | "
-            f"Val Loss: {val_loss_history[-1]:.4f}, Val Acc: {val_acc_history[-1]:.4f}")
+        print(f"Epoch [{epoch+1}/{epochs}] Train Loss: {train_loss_history[-1]:.4f}, Train Acc: {train_acc_history[-1]:.4f} Val Loss: {val_loss_history[-1]:.4f}, Val Acc: {val_acc_history[-1]:.4f}")
 
-        # 保存当前折内最佳模型及早停判断
+        # 早停逻辑
         if val_loss_history[-1] < best_val_loss:
             best_val_loss = val_loss_history[-1]
-            torch.save(model.state_dict(), os.path.join(model_dir, f'best_model_fold{fold+1}.pth'))
-            early_stop_counter = 0  # 表现变好，清零计数器
+            early_stop_counter = 0
+            # 保存当前最佳模型
+            torch.save(model.state_dict(), os.path.join(model_dir, f'best_model_fold_{fold}.pth'))
         else:
-            early_stop_counter += 1 # 表现没变好，增加计数器
-
-        # 早停判断
-        if early_stop_counter >= patience:
-            print(f"Early stopping at epoch {epoch+1}")
-            break
-
-    print(f"已保存第 {fold + 1} 折内最佳模型，其测试损失为: {best_val_loss:.4f}")
-    plot_history(train_loss_history, train_acc_history, val_acc_history, fold, model_dir)
+            early_stop_counter += 1
+            if early_stop_counter >= patience:
+                print(f"Early stopping at epoch {epoch+1}")
+                break
